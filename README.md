@@ -21,6 +21,11 @@ Modern dermatological AI tools are trained predominantly on lighter skin types (
 
 **Dermagemma eliminates this bias** by providing an explainable, end-to-end multimodal pipeline that reads clinical tissue textures accurately, anchors the findings to verified Skin of Color Society data guidelines, and compiles automated expert chart notes.
 
+## ViT Classifier Training Results
+
+| Train Loss | Val Loss | Accuracy | F1 | Precision | Recall |
+|---|---|---|---|---|---|
+| **0.041** | **0.688** | **82.2%** | **82.0%** | **83.0%** | **82.2%** |
 ---
 
 ## 🛠️ How it Works
