@@ -1,5 +1,29 @@
-transformers 
-datasets 
-scikit-learn 
-torchvision 
-pillow 
+# ---- Core inference (main.py) ----
+torch
+torchvision
+transformers>=4.45
+accelerate
+pillow
+numpy
+
+# ---- RAG retrieval ----
+sentence-transformers
+rank-bm25
+faiss-cpu
+
+# ---- PDF export ----
+weasyprint
+
+# ---- Training / fine-tuning (notebooks) ----
+datasets
+scikit-learn
+timm
+
+# ---- Dataset scraping (src/web_scraping_script.py) ----
+playwright
+playwright-stealth
+httpx
+
+# Note: Gemma 4 E4B-IT in the notebook requires transformers from source:
+#   pip install git+https://github.com/huggingface/transformers.git
+# Install that AFTER the pinned versions above if you intend to run the LLM step.
