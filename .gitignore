@@ -44,5 +44,8 @@ models/
 # ---- Scraped data (regenerable) ----
 dataset/
 
+# ---- Generated PDF reports ----
+reports/
+
 # ---- Misc ----
 .git/

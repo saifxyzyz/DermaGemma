@@ -301,13 +301,18 @@ class GemmaSynthesizer:
             )
 
         threads = n_threads or os.cpu_count() or 4
-        print(f"Loading Gemma GGUF ({model_path}) — n_ctx={n_ctx}, n_threads={threads}.")
+        print(
+            f"Loading Gemma GGUF ({model_path}) — n_ctx={n_ctx}, n_threads={threads}. "
+            f"This takes 10-30s on CPU; progress below.",
+            flush=True,
+        )
         self.llm = Llama(
             model_path=model_path,
             n_ctx=n_ctx,
             n_threads=threads,
-            verbose=False,
+            verbose=True,
         )
+        print("Gemma ready.", flush=True)
 
     def synthesize(self, prompt: str, max_new_tokens: int = 300) -> str:
         out = self.llm.create_completion(
