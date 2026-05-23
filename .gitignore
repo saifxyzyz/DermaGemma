@@ -1,3 +1,48 @@
-*.zip
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# ---- Virtual environments ----
 venv/
+.venv/
+env/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Secrets ----
+.env
+.env.local
+*.pem
+
+# ---- Model weights (too large for git) ----
+*.zip
+*.safetensors
+*.gguf
+*.bin
+vit_skin_classifier_v2/
+vit_skin_classifier/
+models/
+
+# ---- RAG embedding cache (regenerated from knowledge_base.json) ----
+.kb_embeddings.npy
+.kb_embeddings.hash
+
+# ---- Scraped data (regenerable) ----
+dataset/
+
+# ---- Misc ----
 .git/

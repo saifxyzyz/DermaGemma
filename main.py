@@ -12,6 +12,8 @@ Usage:
 
 import argparse
 import datetime as _dt
+import hashlib
+import json
 import os
 from typing import Dict, List, Tuple
 
@@ -26,6 +28,9 @@ DTYPE = torch.float16 if DEVICE.type == "cuda" else torch.float32
 VIT_PATH = "saif0z/vit_skin_classifier"
 EMBEDDER_PATH = "pritamdeka/S-PubMedBert-MS-MARCO"
 GEMMA_PATH = "google/gemma-4-E2B-it"
+KB_PATH = "knowledge_base.json"
+EMBED_CACHE_PATH = ".kb_embeddings.npy"
+EMBED_HASH_PATH = ".kb_embeddings.hash"
 
 
 # One canonical sample per disease present in test_images/.
@@ -47,84 +52,23 @@ TEST_SUITE = [
 ]
 
 
-KNOWLEDGE_BASE = [
-    {'id': 'pih_def', 'pathology': 'Post-Inflammatory Hyperpigmentation', 'type': 'definition', 'source': 'JCAD',
-     'text': 'PIH is an acquired hypermelanosis occurring after cutaneous inflammation or injury. It is significantly more prevalent and severe in skin-of-color patients (Fitzpatrick IV-VI).'},
-    {'id': 'pih_feat', 'pathology': 'Post-Inflammatory Hyperpigmentation', 'type': 'feature', 'source': 'JCAD',
-     'text': 'Epidermal PIH appears as tan, brown, or dark brown macules. Dermal PIH has a blue-gray appearance. It worsens with UV exposure and persistent inflammation.'},
-    {'id': 'pih_phr', 'pathology': 'Post-Inflammatory Hyperpigmentation', 'type': 'phrasing', 'source': 'Clinical Guidelines',
-     'text': 'Example phrasing: "Hyper-pigmented macules noted in areas of previous acne lesions, consistent with post-inflammatory hyperpigmentation."'},
-    {'id': 'pih_pit', 'pathology': 'Post-Inflammatory Hyperpigmentation', 'type': 'pitfall', 'source': 'JCAD',
-     'text': 'Pitfall: Deeper dermal pigmentation does not respond to topical tyrosinase inhibitors (like hydroquinone) and may be permanent if untreated.'},
+def load_knowledge_base(path: str = KB_PATH) -> List[dict]:
+    """Load knowledge base entries from disk.
 
-    {'id': 'acne_def', 'pathology': 'Acne Vulgaris', 'type': 'definition', 'source': 'Taylor & Kelly',
-     'text': 'Acne vulgaris in SOC is characterized by a high frequency of post-inflammatory hyperpigmentation. Pathogenesis is similar across races, but sequelae differ.'},
-    {'id': 'acne_feat', 'pathology': 'Acne Vulgaris', 'type': 'feature', 'source': 'Taylor & Kelly',
-     'text': 'Chief complaint is often "dark marks" rather than active pustules. Pomade acne (from hair products) is a frequent precipitating factor in SOC.'},
-    {'id': 'acne_pit', 'pathology': 'Acne Vulgaris', 'type': 'pitfall', 'source': 'Taylor & Kelly',
-     'text': 'Pitfall: Avoid aggressive drying topicals; irritation in dark skin can lead to worsening PIH and "keloidal" scarring.'},
-
-    {'id': 'ad_def', 'pathology': 'Atopic Dermatitis', 'type': 'definition', 'source': 'SUNY Downstate',
-     'text': 'Eczema in darker skin often lacks the "classic" bright redness. It is frequently underdiagnosed due to atypical presentation.'},
-    {'id': 'ad_feat', 'pathology': 'Atopic Dermatitis', 'type': 'feature', 'source': 'SUNY Downstate',
-     'text': 'Erythema may appear purple, gray, or dark brown. Chronic cases show significant "ashiness," lichenification (thickening), and follicular prominence.'},
-    {'id': 'ad_pit', 'pathology': 'Atopic Dermatitis', 'type': 'pitfall', 'source': 'EverydayHealth',
-     'text': 'Pitfall: Severity scoring tools often underestimate inflammation in dark skin because redness is less visible.'},
-
-    {'id': 'sd_def', 'pathology': 'Seborrheic Dermatitis', 'type': 'definition', 'source': 'DermNet',
-     'text': 'A common inflammatory condition causing scaling. In SOC, it often presents as "petaloid" (flower-shaped) hypopigmented patches.'},
-    {'id': 'sd_feat', 'pathology': 'Seborrheic Dermatitis', 'type': 'feature', 'source': 'DermNet',
-     'text': 'Scalp involvement (dandruff) is common. In the face, look for scaling in the eyebrows and nasolabial folds.'},
-
-    {'id': 'tinea_def', 'pathology': 'Tinea Corporis', 'type': 'definition', 'source': 'StatPearls',
-     'text': 'Superficial fungal infection. In dark skin, the "ring" may have a hyperpigmented, scaly border with central clearing or hypopigmentation.'},
-
-    {'id': 'kel_def', 'pathology': 'Keloids', 'type': 'definition', 'source': 'Taylor & Kelly',
-     'text': 'Keloids are overgrowths of dense fibrous tissue that invade healthy tissue beyond the original injury site. High familial susceptibility in SOC.'},
-    {'id': 'kel_feat', 'pathology': 'Keloids', 'type': 'feature', 'source': 'Taylor & Kelly',
-     'text': 'Firm, rubbery, shiny lesions. Common on earlobes, chest, and back. Often painful or pruritic (itchy).'},
-    {'id': 'kel_pit', 'pathology': 'Keloids', 'type': 'pitfall', 'source': 'Taylor & Kelly',
-     'text': 'Pitfall: Frequently confused with hypertrophic scars; keloids do not regress spontaneously and extend beyond the wound boundary.'},
-
-    {'id': 'dpn_def', 'pathology': 'Dermatosis Papulosa Nigra', 'type': 'definition', 'source': 'AccessMedicine',
-     'text': 'DPN are benign, small, darkly pigmented papules (flesh moles) appearing primarily on the face and neck of SOC individuals.'},
-    {'id': 'dpn_feat', 'pathology': 'Dermatosis Papulosa Nigra', 'type': 'feature', 'source': 'AccessMedicine',
-     'text': 'Chronic and progressive with age. Genetic predilection in 50% of cases. Histology is similar to seborrheic keratosis.'},
-
-    {'id': 'pfb_def', 'pathology': 'Pseudofolliculitis Barbae', 'type': 'definition', 'source': 'DermNet',
-     'text': '"Razor bumps" caused by curly hair re-entering the skin. Predominantly affects men with coarse, curly hair.'},
-
-    {'id': 'vit_def', 'pathology': 'Vitiligo', 'type': 'definition', 'source': 'StatPearls',
-     'text': 'Autoimmune destruction of melanocytes. Depigmented patches are starkly visible and highly stigmatizing in dark-skinned populations.'},
-
-    {'id': 'pa_def', 'pathology': 'Pityriasis Alba', 'type': 'definition', 'source': 'Dermatology Advisor',
-     'text': "A low-grade form of eczema. Presents as round, scaly, light (hypopigmented) patches on children's faces."},
-    {'id': 'pa_feat', 'pathology': 'Pityriasis Alba', 'type': 'feature', 'source': 'Dermatology Advisor',
-     'text': 'Patches become more apparent in summer as surrounding skin tans, increasing contrast. Usually resolves by puberty.'},
-
-    {'id': 'mel_def', 'pathology': 'Melasma', 'type': 'definition', 'source': 'StatPearls',
-     'text': 'Acquired hyperpigmentation, often hormonal. Presents as symmetrical brown/gray patches on the face.'},
-    {'id': 'mel_feat', 'pathology': 'Melasma', 'type': 'feature', 'source': 'StatPearls',
-     'text': 'UV and visible light are major drivers. Tinted mineral sunscreens (iron oxides) are recommended for SOC patients.'},
-
-    {'id': 'lp_def', 'pathology': 'Lichen Planus', 'type': 'definition', 'source': 'Mayo Clinic',
-     'text': 'Inflammatory condition affecting skin and mucous membranes. Characterized by the "6 Ps": Planar, Purple, Polygonal, Pruritic, Papules, and Plaques.'},
-    {'id': 'lp_pit', 'pathology': 'Lichen Planus', 'type': 'pitfall', 'source': 'Mayo Clinic',
-     'text': 'Pitfall: In dark skin, purple hues may appear dark brown; look for "Wickham striae" (fine white lines) on the surface.'},
-
-    {'id': 'ta_def', 'pathology': 'Traction Alopecia', 'type': 'definition', 'source': 'DermNet',
-     'text': 'Hair loss due to chronic tension (tight braids/extensions). Early stage is reversible; late stage leads to permanent scarring.'},
-
-    {'id': 'akn_def', 'pathology': 'Acne Keloidalis Nuchae', 'type': 'definition', 'source': 'Taylor & Kelly',
-     'text': 'Folliculitis that evolves into keloid-like papules on the posterior neck/occipital scalp. Almost exclusive to darker-pigmented men with curly hair.'},
-    {'id': 'akn_feat', 'pathology': 'Acne Keloidalis Nuchae', 'type': 'feature', 'source': 'Taylor & Kelly',
-     'text': 'Can lead to scarring alopecia (permanent hair loss). Early treatment with Class I steroids is the medical standard.'},
-
-    {'id': 'an_def', 'pathology': 'Acanthosis Nigricans', 'type': 'definition', 'source': 'StatPearls',
-     'text': 'Velvety, dark thickening in skin folds (neck, armpits). Primarily a cutaneous marker of insulin resistance or obesity.'},
-    {'id': 'an_feat', 'pathology': 'Acanthosis Nigricans', 'type': 'feature', 'source': 'StatPearls',
-     'text': 'Velvety texture is more diagnostic than color alone. Poorly defined borders. Screening for diabetes (A1c) is recommended.'},
-]
+    Supports both legacy flat-list JSON and the {_meta, entries} payload
+    produced by src/scrape_dermnet.py.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Knowledge base not found at {path}. "
+            f"Generate it with: python src/scrape_dermnet.py"
+        )
+    with open(path) as f:
+        data = json.load(f)
+    entries = data["entries"] if isinstance(data, dict) and "entries" in data else data
+    soc = sum(1 for e in entries if e.get("soc_relevant"))
+    print(f"Loaded {len(entries)} KB entries from {path} ({soc} SOC-tagged).")
+    return entries
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +139,7 @@ class DermatologyRetriever:
         label_threshold: float = 0.3,
         top_n_total: int = 3,
         rrf_k: int = 60,
+        soc_boost: float = 0.20,
     ):
         from rank_bm25 import BM25Okapi
         from sentence_transformers import SentenceTransformer
@@ -206,12 +151,36 @@ class DermatologyRetriever:
         self.label_threshold = label_threshold
         self.top_n_total = top_n_total
         self.rrf_k = rrf_k
+        self.soc_boost = soc_boost
 
         corpus_texts = [s["text"] for s in knowledge_base]
         self.bm25 = BM25Okapi([self._tok(t) for t in corpus_texts])
-        embeddings = self.embedder.encode(corpus_texts, normalize_embeddings=True).astype("float32")
+        embeddings = self._load_or_compute_embeddings(corpus_texts)
         self.faiss_index = faiss.IndexFlatIP(embeddings.shape[1])
         self.faiss_index.add(embeddings)
+
+    def _load_or_compute_embeddings(self, corpus_texts: List[str]) -> np.ndarray:
+        """Cache embeddings to disk keyed by a hash of the corpus contents."""
+        h = hashlib.sha1()
+        for t in corpus_texts:
+            h.update(t.encode("utf-8"))
+            h.update(b"\0")
+        corpus_hash = h.hexdigest()
+
+        if os.path.exists(EMBED_CACHE_PATH) and os.path.exists(EMBED_HASH_PATH):
+            with open(EMBED_HASH_PATH) as f:
+                if f.read().strip() == corpus_hash:
+                    arr = np.load(EMBED_CACHE_PATH)
+                    print(f"Loaded cached embeddings from {EMBED_CACHE_PATH} ({arr.shape}).")
+                    return arr
+
+        print(f"Encoding {len(corpus_texts)} KB entries (one-time cost)...")
+        arr = self.embedder.encode(corpus_texts, normalize_embeddings=True).astype("float32")
+        np.save(EMBED_CACHE_PATH, arr)
+        with open(EMBED_HASH_PATH, "w") as f:
+            f.write(corpus_hash)
+        print(f"Cached embeddings to {EMBED_CACHE_PATH}.")
+        return arr
 
     @staticmethod
     def _tok(text: str) -> List[str]:
@@ -254,8 +223,16 @@ class DermatologyRetriever:
             pathology_name = self.kb[i]["pathology"].lower().replace("_", " ")
             rrf *= (1.0 + label_to_confidence.get(pathology_name, 1.0))
 
-            type_boost = {"phrasing": 0.15, "feature": 0.12, "definition": 0.05}
+            type_boost = {
+                "phrasing": 0.15, "feature": 0.12, "pitfall": 0.10,
+                "treatment": 0.08, "definition": 0.05,
+            }
             rrf += type_boost.get(self.kb[i]["type"], 0.0)
+
+            # SOC-tagged entries are the project's whole point — boost them.
+            if self.kb[i].get("soc_relevant"):
+                rrf += self.soc_boost
+
             scored.append((i, rrf))
 
         scored.sort(key=lambda x: -x[1])
@@ -276,10 +253,14 @@ def format_vit_predictions(predictions: List[dict]) -> str:
 def format_rag_context(blocks: List[dict]) -> str:
     if not blocks:
         return "No specific evidence retrieved from the local knowledge base."
-    return "\n".join(
-        f"[{b['type'].upper()} | Source: {b['source']}] {b['text']}"
-        for b in blocks
-    )
+    lines = []
+    for b in blocks:
+        soc_tag = " | SOC" if b.get("soc_relevant") else ""
+        src = b.get("source_url") or b.get("source", "unknown")
+        heading = b.get("heading")
+        head_str = f" — {heading}" if heading else ""
+        lines.append(f"[{b['type'].upper()}{soc_tag} | {src}{head_str}]\n{b['text']}")
+    return "\n\n".join(lines)
 
 
 def build_prompt(vit_str: str, density: str, distribution: str, mean_act: float, rag_str: str) -> str:
@@ -432,9 +413,10 @@ def generate_pdf(
 class DermagemmaPipeline:
     """Loads ViT + retriever (+ optional Gemma) once; reuse via .analyze()."""
 
-    def __init__(self, load_llm: bool = True, hf_token: str = None):
+    def __init__(self, load_llm: bool = True, hf_token: str = None, kb_path: str = KB_PATH):
         self.classifier = SkinClassifier()
-        self.retriever = DermatologyRetriever(KNOWLEDGE_BASE)
+        kb = load_knowledge_base(kb_path)
+        self.retriever = DermatologyRetriever(kb)
         self.synthesizer = GemmaSynthesizer(hf_token=hf_token) if load_llm else None
 
     def analyze(self, image_path: str, top_k: int = 3, output_pdf: str = None) -> dict:
@@ -508,9 +490,17 @@ class DermagemmaPipeline:
         return result
 
 
+def _norm_label(name: str) -> str:
+    """Normalize label for comparison: collapse separators, strip trailing 's'."""
+    n = name.lower().replace("-", " ").replace("_", " ").strip()
+    if n.endswith("s") and len(n) > 3:
+        n = n[:-1]
+    return n
+
+
 def run_test_suite(pipeline: "DermagemmaPipeline", top_k: int) -> None:
     """Run the built-in one-image-per-disease test set and print a summary."""
-    known_labels = {v.replace("_", " ") for v in pipeline.classifier.id2label.values()}
+    known_norms = {_norm_label(v) for v in pipeline.classifier.id2label.values()}
     rows = []
     for expected, image_path in TEST_SUITE:
         print("\n" + "=" * 72)
@@ -519,8 +509,9 @@ def run_test_suite(pipeline: "DermagemmaPipeline", top_k: int) -> None:
         try:
             result = pipeline.analyze(image_path, top_k=top_k)
             top = result["predictions"][0]
-            in_vocab = expected in known_labels
-            correct = in_vocab and top["condition"] == expected
+            expected_norm = _norm_label(expected)
+            in_vocab = expected_norm in known_norms
+            correct = in_vocab and _norm_label(top["condition"]) == expected_norm
             rows.append({
                 "expected": expected,
                 "predicted": top["condition"],
