@@ -1,75 +1,169 @@
+# Dermagemma
 
+![Dermagemma](dermagemma_card_v7.png)
 
-# Dermagemma 🩺✨
-### Closing the Healthcare Gap in AI Dermatology for Skin of Color (SOC)
+### Offline-first dermatology AI for Skin of Color
 
-Dermagemma is a dynamic, multimodal Retrieval-Augmented Generation (RAG) assistant designed to address the critical 17% drop in standard skin AI diagnostic accuracy for patients with darker skin tones. By combining Saif's custom-tuned Vision Transformer (ViT) with Google's advanced **Gemma 4 E4B-IT** model, Dermagemma extracts deep visual matrix features, cross-references them with an authoritative skin-of-color knowledge base, and outputs precise, unbiased, and downloadable clinical charts.
+## The Problem
 
----
+Modern dermatological AI is trained predominantly on lighter Fitzpatrick skin types (I to III). Conditions like eczema, keloids, hyperpigmentation, and lichen planus present very differently on Fitzpatrick IV to VI skin, and standard models lose roughly 17% diagnostic accuracy on darker skin tones. The result is a systemic bias in clinical AI tools: misdiagnosis, incorrect prescriptions, and prolonged suffering for the patients who most need accurate dermatological assessment.
 
-## 📖 Table of Contents
-1. [Project Purpose](#-project-purpose)
-2. [How it Works](#%EF%B8%8F-how-it-works)
-3. [Quick Start Guide (Google Colab)](#-quick-start-guide-google-colab)
-4. [How to Run the Pipeline](#-how-to-run-the-pipeline)
-5. [Inference & PDF Generation](#-inference--pdf-generation)
+The problem is compounded by deployment reality. Many of the regions where Skin of Color is the dominant phenotype (sub-Saharan Africa, South Asia, parts of Latin America) also have constrained internet access, intermittent power, and limited clinical infrastructure. A cloud-only AI assistant that requires a stable connection and a hosted GPT-4-class model is useless in those settings.
 
----
+## How Dermagemma Solves It
 
-## 🎯 Project Purpose
-Modern dermatological AI tools are trained predominantly on lighter skin types (Fitzpatrick Scales I-III). This creates a dangerous systemic bias: conditions like eczema, keloids, or hyperpigmentation manifest differently on darker skin types (Fitzpatrick Scales IV-VI), frequently leading to misdiagnosis, wrong prescriptions, and prolonged patient suffering. 
+Dermagemma is an **offline-first**, fully local multimodal pipeline that runs end-to-end on a CPU laptop with no network connection required after initial setup. It combines:
 
-**Dermagemma eliminates this bias** by providing an explainable, end-to-end multimodal pipeline that reads clinical tissue textures accurately, anchors the findings to verified Skin of Color Society data guidelines, and compiles automated expert chart notes.
+1. A **fine-tuned Vision Transformer (ViT)** classifier trained with Skin of Color emphasis, covering 84 conditions and reaching 82.2% accuracy on the validation set.
+2. A **hybrid RAG retriever** (BM25 + dense embeddings via PubMedBERT, fused with Reciprocal Rank Fusion) over a DermNet NZ knowledge base of 588 entries, with explicit Skin of Color tagging and re-ranking boost.
+3. **Gemma 4 E2B-IT** running locally via llama.cpp (Q4_K_M GGUF, ~2.5 GB resident), producing a structured consultation note grounded in the retrieved evidence.
+4. **WeasyPrint** for a clean, downloadable PDF clinical chart.
 
-## ViT Classifier Training Results
+The full inference stack fits in roughly 5 GB of RAM and runs on CPU. No HuggingFace token at runtime, no API keys, no cloud calls. Once the models are downloaded, the whole pipeline works on an airplane.
 
-| Train Loss | Val Loss | Accuracy | F1 | Precision | Recall |
-|---|---|---|---|---|---|
-| **0.041** | **0.688** | **82.2%** | **82.0%** | **83.0%** | **82.2%** |
----
+## ViT Classifier Performance
 
-## 🛠️ How it Works
-1. **Visual Embedding Core:** The system reads an incoming patient skin image through **Saif’s ViT layers**, extracting statistical morphology tokens (tissue density profile, cellular architecture distribution, and matrix activation scores).
-2. **Knowledge-Gated Query RAG:** The model utilizes these feature matrices to dynamically isolate clinical conditions and filter a targeted local dictionary database (`KNOWLEDGE_BASE`) covering 15 critical skin-of-color pathologies.
-3. **Advanced LLM Synthesis:** The retrieved text guidelines and visual tokens are securely packaged into custom chat wrappers and executed via **Gemma 4 E4B** on a T4 GPU using strict repetition controls.
-4. **Automated Vector PDF Export:** The system outputs an on-screen consultation note and instantly compiles a beautifully formatted, downloadable corporate medical PDF chart.
+| Train Loss | Val Loss | Accuracy | F1   | Precision | Recall |
+| ---------- | -------- | -------- | ---- | --------- | ------ |
+| 0.041      | 0.688    | 82.2%    | 82.0% | 83.0%    | 82.2%  |
 
----
+## Architecture
 
-## 🚀 Quick Start Guide (Google Colab)
-The entire project is structured to run inside a single, self-contained interactive notebook: **`gemma4good_RAG_pipeline.ipynb`**.
+```
+Input image
+   |
+   v
+ViT classifier (SkinClassifier)         -> top-k predictions + morphology tokens
+   |
+   v
+Hybrid RAG retriever                    -> BM25 + FAISS dense, RRF fused
+   (DermatologyRetriever)                  SOC-tagged entries get a relevance boost
+   |
+   v
+Gemma 4 E2B-IT Q4_K_M GGUF              -> structured consultation note
+   (GemmaSynthesizer, via llama.cpp)
+   |
+   v
+WeasyPrint PDF (optional)
+```
+
+## Setup
 
 ### Prerequisites
-* A Google Colab account (Colab Pro with High-RAM is recommended, but standard T4 runtimes are supported).
-* A Hugging Face account with an active access token (`HF_TOKEN`) authorized to access the gated Google Gemma 4 repositories.
-* Your custom user token saved securely in Colab's Secrets manager tab (the key icon 🔑) under the variable name `HF_TOKEN`.
 
----
+* Python 3.10+ (developed against 3.12)
+* ~6 GB of free disk space for model weights
+* No GPU required. A CPU with 8+ GB RAM is enough.
 
-## 💻 How to Run the Pipeline
+### 1. Clone and create a virtual environment
 
-> ⚠️ **CRITICAL EXECUTION NOTE:** Every cell in the master notebook must be run in exact sequential order from top to bottom to maintain the local PyTorch tensor graph configurations.
+```bash
+git clone https://github.com/saifxyzyz/dermagemma.git
+cd dermagemma/vit
+python -m venv venv
+source venv/bin/activate
+```
 
-### Step 1: Initial Hardware Setup & Installation
-1. Open **`gemma4good_RAG_pipeline.ipynb`** in Google Colab.
-2. Ensure your active runtime environment type is explicitly configured to utilize the **T4 GPU** accelerator hardware block.
-3. Run the initial dependency installation cells (`!pip install transformers torch weasyprint ...`).
+### 2. Install Python dependencies
 
-### Step 2: The Required Cache Restart 🔄
-1. Because the dynamic notebook updates deep CUDA and library packages into your instance runtime environment cache, **Colab may prompt you with a message window requesting a Session Restart.**
-2. Click **Restart Session** (or navigate manually to the top toolbar menu and select `Runtime` ➡️ `Restart session`).
-3. **CRITICAL WARNING:** Once the runtime session boots back up cleanly, **re-run every single cell down the notebook sequentially EXCEPT the initial installation code cells.** This ensures the active memory maps are populated correctly without overwriting your workspace.
+The llama-cpp-python package compiles llama.cpp from source by default, which is slow and brittle. Install it from the prebuilt CPU wheel index first, then install the rest:
 
-### Step 3: Model Ingestion & Weight Consolidation
-Run the model configuration cells. The notebook is hard-coded with a custom `{"" : 0}` device layout template configuration map to explicitly pin Gemma 4 E4B parameters directly into your physical T4 GPU hardware card VRAM, completely bypassing virtual `meta` device allocation loop bugs.
+```bash
+pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu --prefer-binary
+pip install -r requirements.txt
+```
 
----
+### 3. Download the Gemma 4 E2B-IT GGUF
 
-## 📸 Inference & PDF Generation
+```bash
+mkdir -p models
+hf download unsloth/gemma-4-E2B-it-GGUF gemma-4-E2B-it-Q4_K_M.gguf --local-dir models/
+```
 
-To run a live, real-world evaluation diagnostic routine on any specific sample patient case, follow these exact quick steps:
+This pulls a single 2.9 GB file into `models/gemma-4-E2B-it-Q4_K_M.gguf`. The Q4_K_M quantization keeps ~95% of the fp32 quality at roughly one fifth the memory.
 
-1. **Upload your test image:** Locate a random skin-of-color disease sample image file (such as an example keloid, acne, or PIH image patch). Upload it into your local Colab directory filesystem via the left folder navigation panel (📂). Name the file `test_image.png` and save it directly under the `/content/` path matrix root block (`/content/test_image.png`).
-2. **Configure your inference node:** Navigate down to the execution interface cell area block at the very bottom of the notebook file and locate the `IMAGE_PATH` parameter assignment string option marker:
-   ```python
-   IMAGE_PATH = "/content/test_image.png"
+### 4. Build the knowledge base
+
+`knowledge_base.json` is already committed to the repo. If you want to regenerate it from DermNet NZ:
+
+```bash
+python src/scrape_dermnet.py
+```
+
+This scrapes ~80 condition pages from DermNet, tags entries that contain Skin of Color content, and writes `knowledge_base.json` at the repo root. Respects a 1.5s delay between requests.
+
+### 5. (Optional) Download the ViT classifier weights
+
+The ViT is loaded from the HuggingFace Hub at `saif0z/vit_skin_classifier` by default and cached locally on first run. If you want to run fully offline from the start, predownload it:
+
+```bash
+python -c "from transformers import ViTForImageClassification, ViTImageProcessor; \
+ViTForImageClassification.from_pretrained('saif0z/vit_skin_classifier'); \
+ViTImageProcessor.from_pretrained('saif0z/vit_skin_classifier')"
+```
+
+## Usage
+
+### Single image, CLI
+
+```bash
+python main.py test_images/post-inflammatory_hyper_1.jpg
+```
+
+### Single image with PDF export
+
+```bash
+python main.py test_images/keloids.jpeg --pdf report.pdf
+```
+
+### Classification + RAG only (skip the LLM, fastest)
+
+```bash
+python main.py test_images/melasma_black_1.webp --skip-llm
+```
+
+### Run the full one-image-per-disease test suite
+
+```bash
+python main.py --test-all
+```
+
+### Gradio web UI
+
+```bash
+python app.py
+```
+
+Opens at `http://127.0.0.1:7860`. The Gemma synthesizer is loaded lazily on the first request with the "Generate AI consultation note" toggle enabled, so you can run classification + RAG without ever paying the LLM load cost.
+
+To disable Gemma at launch (e.g. on a very memory-constrained machine):
+
+```bash
+python app.py --skip-llm
+```
+
+## Project Layout
+
+```
+vit/
+  main.py                      CLI entry point + DermagemmaPipeline class
+  app.py                       Gradio UI
+  vit.py                       Standalone ViT inference helper
+  knowledge_base.json          DermNet NZ KB, 588 entries, SOC-tagged
+  models/
+    gemma-4-E2B-it-Q4_K_M.gguf Local Gemma weights (not in git)
+  src/
+    scrape_dermnet.py          DermNet scraper (rebuilds knowledge_base.json)
+    web_scraping_script.py     Image dataset scraper (training-time only)
+  notebooks/
+    gemma4good_RAG_pipeline.ipynb   Original Colab prototype
+  test_images/                 One image per disease for the test suite
+  requirements.txt
+```
+
+## Technical Notes
+
+* **Embedder:** `pritamdeka/S-PubMedBert-MS-MARCO`. PubMedBERT pre-trained on biomedical text, fine-tuned on MS-MARCO for retrieval. Better domain fit than general-purpose embedders for clinical RAG.
+* **Embedding cache:** Encoded KB vectors are cached at `.kb_embeddings.npy` keyed by a SHA-1 of the corpus, so the embedder only runs the full encode pass when `knowledge_base.json` actually changes.
+* **SOC boost:** Entries tagged `soc_relevant: true` in the KB (either because their section heading matches a Skin of Color pattern or their body contains SOC keywords) get a +0.20 boost in the RRF score, surfacing them ahead of generic content.
+* **Local first:** No network calls happen at inference time once weights are cached. The pipeline survives an offline environment.

@@ -59,7 +59,7 @@ def _ensure_llm(progress) -> None:
     """Lazy-load Gemma on first use. Raises if it can't fit in memory."""
     if PIPELINE.synthesizer is not None:
         return
-    progress(0.5, desc="Loading Gemma 4 E2B (one-time, slow on CPU)...")
+    progress(0.5, desc="Loading Gemma 4 E2B Q4_K_M GGUF (one-time, ~10s on CPU)...")
     PIPELINE.synthesizer = GemmaSynthesizer()
 
 
@@ -212,7 +212,7 @@ with gr.Blocks(title="Dermagemma — SOC Dermatology AI") as app:
                     else "Generate AI consultation note (disabled — relaunch without --skip-llm)"
                 ),
                 info=(
-                    "Slow on CPU (1–5 min per request) and memory-heavy. "
+                    "Q4_K_M GGUF — ~2.5 GB resident, ~20–60s per note on CPU. "
                     "Loaded lazily on first use."
                     if LLM_ENABLED
                     else "LLM was disabled at launch via --skip-llm."

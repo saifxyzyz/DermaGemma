@@ -6,6 +6,11 @@ accelerate
 pillow
 numpy
 
+# ---- Local LLM (Gemma 4 E2B-IT via Q4_K_M GGUF) ----
+# Install from the prebuilt CPU wheel index to avoid compiling llama.cpp:
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu --prefer-binary
+llama-cpp-python
+
 # ---- RAG retrieval ----
 sentence-transformers
 rank-bm25
@@ -29,7 +34,3 @@ httpx
 
 # ---- DermNet KB scraping (src/scrape_dermnet.py) ----
 beautifulsoup4
-
-# Note: Gemma 4 E4B-IT in the notebook requires transformers from source:
-#   pip install git+https://github.com/huggingface/transformers.git
-# Install that AFTER the pinned versions above if you intend to run the LLM step.

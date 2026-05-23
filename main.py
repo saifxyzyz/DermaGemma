@@ -27,7 +27,7 @@ DTYPE = torch.float16 if DEVICE.type == "cuda" else torch.float32
 
 VIT_PATH = "saif0z/vit_skin_classifier"
 EMBEDDER_PATH = "pritamdeka/S-PubMedBert-MS-MARCO"
-GEMMA_PATH = "google/gemma-4-E2B-it"
+GEMMA_GGUF_PATH = "models/gemma-4-E2B-it-Q4_K_M.gguf"
 KB_PATH = "knowledge_base.json"
 EMBED_CACHE_PATH = ".kb_embeddings.npy"
 EMBED_HASH_PATH = ".kb_embeddings.hash"
@@ -288,39 +288,36 @@ Synthesize the inputs above to generate a formal, authoritative Dermatology Cons
 
 
 class GemmaSynthesizer:
-    def __init__(self, model_path: str = GEMMA_PATH, device: torch.device = DEVICE, hf_token: str = None):
-        from transformers import AutoModelForImageTextToText, AutoTokenizer
+    """Local Gemma 4 E2B-IT via llama-cpp-python (Q4_K_M GGUF). CPU-friendly."""
 
-        token = hf_token or os.environ.get("HF_TOKEN")
-        dtype = torch.float16 if device.type == "cuda" else torch.float32
-        print(
-            f"Loading Gemma ({model_path}) on {device} in {dtype}. "
-            "On CPU this can take several minutes per generation."
+    def __init__(self, model_path: str = GEMMA_GGUF_PATH, n_ctx: int = 4096, n_threads: int = None):
+        from llama_cpp import Llama
+
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"GGUF not found at {model_path}. Download it with:\n"
+                f"  hf download unsloth/gemma-4-E2B-it-GGUF gemma-4-E2B-it-Q4_K_M.gguf "
+                f"--local-dir models/"
+            )
+
+        threads = n_threads or os.cpu_count() or 4
+        print(f"Loading Gemma GGUF ({model_path}) — n_ctx={n_ctx}, n_threads={threads}.")
+        self.llm = Llama(
+            model_path=model_path,
+            n_ctx=n_ctx,
+            n_threads=threads,
+            verbose=False,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, token=token)
-        self.model = AutoModelForImageTextToText.from_pretrained(
-            model_path,
-            torch_dtype=dtype,
-            token=token,
-            low_cpu_mem_usage=True,
-        ).to(device)
-        self.model.eval()
-        self.device = device
 
-    @torch.no_grad()
     def synthesize(self, prompt: str, max_new_tokens: int = 300) -> str:
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-        out = self.model.generate(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
+        out = self.llm.create_completion(
+            prompt=prompt,
+            max_tokens=max_new_tokens,
             temperature=0.2,
-            repetition_penalty=1.2,
-            pad_token_id=self.tokenizer.eos_token_id,
+            repeat_penalty=1.2,
+            stop=["<end_of_turn>", "<start_of_turn>"],
         )
-        generated = out[0][inputs["input_ids"].shape[-1]:]
-        return self.tokenizer.decode(generated, skip_special_tokens=True)
+        return out["choices"][0]["text"]
 
 
 # ---------------------------------------------------------------------------
@@ -413,11 +410,11 @@ def generate_pdf(
 class DermagemmaPipeline:
     """Loads ViT + retriever (+ optional Gemma) once; reuse via .analyze()."""
 
-    def __init__(self, load_llm: bool = True, hf_token: str = None, kb_path: str = KB_PATH):
+    def __init__(self, load_llm: bool = True, kb_path: str = KB_PATH):
         self.classifier = SkinClassifier()
         kb = load_knowledge_base(kb_path)
         self.retriever = DermatologyRetriever(kb)
-        self.synthesizer = GemmaSynthesizer(hf_token=hf_token) if load_llm else None
+        self.synthesizer = GemmaSynthesizer() if load_llm else None
 
     def analyze(self, image_path: str, top_k: int = 3, output_pdf: str = None) -> dict:
         if not os.path.exists(image_path):
@@ -561,7 +558,6 @@ def main():
     )
     parser.add_argument("--top-k", type=int, default=3, help="Number of top classifier predictions to keep.")
     parser.add_argument("--skip-llm", action="store_true", help="Run classification + RAG only; skip Gemma synthesis.")
-    parser.add_argument("--hf-token", default=None, help="Hugging Face token (or set HF_TOKEN env var).")
     args = parser.parse_args()
 
     if args.test_all and args.images:
@@ -569,7 +565,7 @@ def main():
     if not args.test_all and not args.images:
         parser.error("Provide one or more image paths, or use --test-all.")
 
-    pipeline = DermagemmaPipeline(load_llm=not args.skip_llm, hf_token=args.hf_token)
+    pipeline = DermagemmaPipeline(load_llm=not args.skip_llm)
 
     if args.test_all:
         run_test_suite(pipeline, top_k=args.top_k)
