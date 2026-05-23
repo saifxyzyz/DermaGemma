@@ -1,5 +1,36 @@
-transformers 
-datasets 
-scikit-learn 
-torchvision 
-pillow 
+# ---- Core inference (main.py) ----
+torch
+torchvision
+transformers>=4.45
+accelerate
+pillow
+numpy
+
+# ---- Local LLM (Gemma 4 E2B-IT via Q4_K_M GGUF) ----
+# Install from the prebuilt CPU wheel index to avoid compiling llama.cpp:
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu --prefer-binary
+llama-cpp-python
+
+# ---- RAG retrieval ----
+sentence-transformers
+rank-bm25
+faiss-cpu
+
+# ---- PDF export ----
+weasyprint
+
+# ---- Web UI ----
+gradio
+
+# ---- Training / fine-tuning (notebooks) ----
+datasets
+scikit-learn
+timm
+
+# ---- Dataset scraping (src/web_scraping_script.py) ----
+playwright
+playwright-stealth
+httpx
+
+# ---- DermNet KB scraping (src/scrape_dermnet.py) ----
+beautifulsoup4

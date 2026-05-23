@@ -6,17 +6,17 @@ from transformers import (
 import json
 import torch
 
-VIT_PATH = "vit_skin_classifier_v2" 
+VIT_PATH = "saif0z/vit_skin_classifier" 
 
 print("Loading ViT classifier")
 vit_processsor = ViTImageProcessor.from_pretrained(VIT_PATH)
 vit_model = ViTForImageClassification.from_pretrained(VIT_PATH).to("cpu")
 vit_model.eval()
 
-with open(f"{VIT_PATH}/labels.json") as f:
-    label_data = json.load(f)
-    id2label = {int(k): v for k, v in label_data["id2label"].items()}
+id2label = vit_model.config.id2label
+
 print(f"ViT loaded - knows {len(id2label)} conditions")
+formatted_labels = "\n".join(id2label.values())
 formatted_labels = "\n".join(id2label.values())
 # print(formatted_labels)
 def classify_image(image_path, top_k=3):
